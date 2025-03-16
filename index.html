@@ -6,7 +6,7 @@
   <title>זמן זהב - ניהול לוז יומי</title>
   <!-- ספריית html2canvas לצילום מסך -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <!-- Firebase SDKs (גרסת compat) -->
+  <!-- Firebase SDKs (גרסת compat לצורך פשטות) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-analytics-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -26,28 +26,7 @@
     firebase.analytics();
     const db = firebase.firestore();
 
-    // מערך לנושאים קבועים (בשלב זה בזיכרון בלבד)
-    let userTopics = [];
-    // נתונים ללוזים
-    let scheduleItems = [];
-    let scheduleName = null;
-    let savedSchedules = [];
-    let editingIndex = -1;
-    let selectedTemplate = null;
-    
-    // מיפוי נושאים לאמוג'ים
-    const subjectEmojis = {
-      "קריאה של חומר לימוד": "📖",
-      "תרגול": "📝",
-      "מעבר על חומר מהיר": "⏩",
-      "למידה עמוקה": "🔍",
-      "לקום": "⏰",
-      "הפסקה": "☕️",
-      "ללכת לישון": "😴",
-      "אוכל": "🍽️"
-    };
-
-    // --- התחברות ועדכון Topbar ---
+    // פונקציות התחברות – כפי שהוגדר קודם
     function login() {
       const provider = new firebase.auth.GoogleAuthProvider();
       firebase.auth().signInWithPopup(provider)
@@ -59,6 +38,7 @@
         });
     }
 
+    // עדכון Topbar – מחלץ את השם הפרטי מתוך displayName ומציג ברכה בהתאם לשעה
     function updateUserGreeting(user) {
       let currentHour = new Date().getHours();
       let greeting = "בוקר טוב";
@@ -70,6 +50,7 @@
       const authLink = document.getElementById("authLink");
       let firstName = user.displayName ? user.displayName.split(" ")[0] : user.email;
       authLink.innerText = greeting + "\n" + firstName + "!";
+      // רק אם המשתמש לוחץ "אישור" בהודעת confirm – מתבצעת ההתנתקות
       authLink.onclick = function(event) {
         event.preventDefault();
         if (confirm("להתנתק?")) {
@@ -81,28 +62,7 @@
       };
     }
 
-    firebase.auth().onAuthStateChanged((user) => {
-      if (user) {
-        updateUserGreeting(user);
-        loadSchedulesFromFirestore(user);
-      } else {
-        savedSchedules = [];
-        document.getElementById("scheduleContainer").innerHTML = "";
-      }
-    });
-
-    // --- שמירה וטעינה של לוזים מ-Firestore ---
-    function saveSchedulesToFirestore() {
-      const user = firebase.auth().currentUser;
-      if (user) {
-        db.collection("schedules").doc(user.uid).set({
-          schedules: savedSchedules
-        })
-        .then(() => { console.log("Schedules saved successfully"); })
-        .catch((error) => { console.error("Error saving schedules: ", error); });
-      }
-    }
-
+    // טעינת הלוזים מה-Firestore עבור המשתמש המחובר
     function loadSchedulesFromFirestore(user) {
       db.collection("schedules").doc(user.uid).get().then((doc) => {
         if (doc.exists) {
@@ -115,6 +75,29 @@
         console.error("Error loading schedules: ", error);
       });
     }
+
+    // שמירת הלוזים במסד – מתבצעת בכל פעם שהנתונים משתנים
+    function saveSchedulesToFirestore() {
+      const user = firebase.auth().currentUser;
+      if (user) {
+        db.collection("schedules").doc(user.uid).set({
+          schedules: savedSchedules
+        })
+        .then(() => { console.log("Schedules saved successfully"); })
+        .catch((error) => { console.error("Error saving schedules: ", error); });
+      }
+    }
+
+    // מאזין לשינוי מצב ההתחברות
+    firebase.auth().onAuthStateChanged((user) => {
+      if (user) {
+        updateUserGreeting(user);
+        loadSchedulesFromFirestore(user);
+      } else {
+        savedSchedules = [];
+        document.getElementById("scheduleContainer").innerHTML = "";
+      }
+    });
   </script>
   <style>
     /* Reset בסיסי */
@@ -128,6 +111,7 @@
       padding-top: 120px;
       text-align: center;
     }
+    /* Topbar */
     .topbar {
       background-color: #34495e;
       display: flex;
@@ -166,8 +150,11 @@
       background-color: #3d566e;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
+    /* Main Content */
     main { padding: 20px; margin-top: 20px; min-height: 70vh; text-align: center; }
+    /* Footer */
     footer { text-align: center; padding: 10px; color: #7f8c8d; font-size: 14px; }
+    /* Action Buttons */
     .action-buttons { display: inline-flex; align-items: center; gap: 10px; margin-top: 10px; position: relative; }
     .btn { display: inline-block; padding: 10px 20px; background-color: #3a506b; color: #fff; border: none; cursor: pointer; font-size: 16px; border-radius: 8px; transition: background-color 0.3s; }
     .btn:hover { background-color: #2a3e56; }
@@ -185,11 +172,11 @@
       background-color: #cce5ff; border-radius: 6px; margin-bottom: 5px;
     }
     #templateDropdown button:hover { background: #e6f2ff; }
-    /* Schedule Item – פריט לוז עם רווח משמאל לסמיילי מחיקה */
+    /* Schedule Item – כל פריט לוז מוצג כריבוע עם סמיילי מחיקה בצד שמאל */
     .schedule-item {
       position: relative;
       background-color: rgba(255,255,255,0.9);
-      padding: 15px 15px 15px 40px;
+      padding: 15px 15px 15px 40px; /* רווח משמאל למיקום הסמיילי */
       margin: 10px auto;
       border-radius: 12px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -201,6 +188,7 @@
     }
     .schedule-item:hover { transform: scale(1.02); }
     .schedule-item h3 { margin-bottom: 5px; color: #2c3e50; }
+    /* הסמיילי למחיקה – ממוקם בצד שמאל בתוך הפריט */
     .delete-icon {
       position: absolute;
       left: 5px;
@@ -210,7 +198,20 @@
       cursor: pointer;
       color: #e74c3c;
     }
-        /* המשך Part 2 של העיצוב */
+    /* הדמיית סמיילי למחיקת תבנית קבועה */
+    .template-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      margin-bottom: 5px;
+    }
+    .template-item .delete-icon {
+      margin-left: 10px;
+    }
+    /* ווטרמרקים עבור נושאים */
     .schedule-item[data-subject="קריאה של חומר לימוד"]::before {
       content: "";
       position: absolute;
@@ -457,13 +458,22 @@
       </div>
       <div class="form-group">
         <label>נושא:</label>
-        <select id="modalSubject"></select>
+        <select id="modalSubject">
+          <option value="קריאה של חומר לימוד">📖 קריאה של חומר לימוד</option>
+          <option value="תרגול">📝 תרגול</option>
+          <option value="מעבר על חומר מהיר">⏩ מעבר על חומר מהיר</option>
+          <option value="למידה עמוקה">🔍 למידה עמוקה</option>
+          <option value="לקום">⏰ לקום</option>
+          <option value="הפסקה">☕ הפסקה</option>
+          <option value="ללכת לישון">😴 ללכת לישון</option>
+          <option value="אוכל">🍽️ אוכל</option>
+        </select>
       </div>
       <div class="form-group">
         <label>תיאור:</label>
         <textarea id="modalDescription" rows="3" placeholder="תאר מה תלמד או מה הפעילות"></textarea>
       </div>
-      <!-- סמיילי מחיקה לפריט לוז -->
+      <!-- סמיילי מחיקה בפריט הלוז -->
       <span class="delete-icon" onclick="deleteScheduleItemPrompt(event)">🗑️</span>
       <button class="btn" id="addItemBtn" onclick="saveItem()">סיום והוסף</button>
     </div>
@@ -509,117 +519,138 @@
         <label>תיאור:</label>
         <textarea id="templateDescriptionInput" rows="2" placeholder="תאר את תבנית הלוז"></textarea>
       </div>
-      <!-- רשימת תבניות קבועות עם אפשרות למחיקה -->
+      <!-- עבור תבניות קבועות – גם כאן נוסיף סמיילי מחיקה -->
       <div id="constantTemplateList"></div>
       <button class="btn" onclick="saveConstantTemplate()">שמור תבנית</button>
     </div>
   </div>
   
-  <!-- מודאל: מודאל הוספת נושא -->
-  <div id="newTopicModal" class="modal">
-    <div class="modal-content modal-elegant">
-      <span class="close" onclick="closeNewTopicModal()">&times;</span>
-      <h2>הוספת נושא</h2>
-      <p>אנא בחר שם לנושא 🖋️</p>
-      <div class="form-group">
-        <input type="text" id="newTopicInput" placeholder="הזן שם נושא">
-      </div>
-      <div class="form-group">
-        <button class="btn" onclick="addNewTopicOneTime()">הוספה חד פעמית</button>
-        <button class="btn" onclick="addNewTopicPermanent()">הוספה קבועה</button>
-      </div>
-    </div>
-  </div>
-  
   <script>
-    // --- ניהול תבניות ונושאים ---
-    function buildSubjectOptions() {
-      const select = document.getElementById("modalSubject");
-      select.innerHTML = "";
-      const defaultTopics = [
-        { value: "קריאה של חומר לימוד", label: "📖 קריאה של חומר לימוד" },
-        { value: "תרגול", label: "📝 תרגול" },
-        { value: "מעבר על חומר מהיר", label: "⏩ מעבר על חומר מהיר" },
-        { value: "למידה עמוקה", label: "🔍 למידה עמוקה" },
-        { value: "לקום", label: "⏰ לקום" },
-        { value: "הפסקה", label: "☕ הפסקה" },
-        { value: "ללכת לישון", label: "😴 ללכת לישון" },
-        { value: "אוכל", label: "🍽️ אוכל" }
-      ];
-      defaultTopics.forEach(topic => {
-        const opt = document.createElement("option");
-        opt.value = topic.value;
-        opt.textContent = topic.label;
-        select.appendChild(opt);
+    // מיפוי נושאים לאמוג'ים – שמות מלאים כפי שמופיעים
+    const subjectEmojis = {
+      "קריאה של חומר לימוד": "📖",
+      "תרגול": "📝",
+      "מעבר על חומר מהיר": "⏩",
+      "למידה עמוקה": "🔍",
+      "לקום": "⏰",
+      "הפסקה": "☕️",
+      "ללכת לישון": "😴",
+      "אוכל": "🍽️"
+    };
+
+    // משתנים גלובליים
+    let scheduleItems = [];
+    let scheduleName = null;
+    let savedSchedules = [];
+    let editingIndex = -1;
+    let constantTemplates = [];
+    let selectedTemplate = null;
+
+    // פונקציות למחיקת פריט לוז מהמערך הנוכחי
+    function deleteScheduleItemPrompt(event) {
+      event.stopPropagation(); // מניעת פתיחת מודאל עריכה
+      if (confirm("האם למחוק את הפריט?")) {
+        // מחיקה מתבצעת לפי הערך של editingIndex, או אם אנחנו בלחיצה על הסמיילי בתוך פריט קיים – יש לחלץ את האינדקס
+        // כאן נניח שהסמיילי בתוך פריט הלוז נמצא בתוך המודל (והפריט הנוכחי הוא זה שהוצג)
+        // במקרה פשוט זה יתבצע למחיקה מהמערך scheduleItems, ולאחר מכן נשמור ל-Firestore
+        // נניח שהפריט אליו הסמיילי שייך הוא הפריט האחרון שנבחר לעריכה – ניתן לשנות את הלוגיקה לפי הצורך
+        // אם נלחץ על הסמיילי בתוך פריט, ננסה לקבל את האינדקס שלו באמצעות קרבתו לאלמנט ההורה
+        // כאן נעשה זאת בצורה פשוטה: נבקש מהמשתמש לאשר מחיקה עבור כל הפריט הנוכחי (אם יש עריכה)
+        // אם אין עריכה (editingIndex == -1), אפשר שלא לעשות שום דבר.
+        if (editingIndex !== -1) {
+          scheduleItems.splice(editingIndex, 1);
+          renderScheduleItems();
+          saveSchedulesToFirestore();
+        }
+      }
+    }
+
+    // פונקציות למחיקת תבנית קבועה
+    function deleteConstantTemplate(index, event) {
+      event.stopPropagation();
+      if (confirm("האם למחוק את תבנית הלוז הקבועה?")) {
+        constantTemplates.splice(index, 1);
+        renderConstantTemplates();
+      }
+    }
+
+    // עדכון רשימת תבניות קבועות (עם סמיילי מחיקה)
+    function renderConstantTemplates() {
+      const container = document.getElementById("constantTemplateList");
+      container.innerHTML = "";
+      constantTemplates.forEach((template, index) => {
+        const div = document.createElement("div");
+        div.className = "template-item";
+        div.innerHTML = `<span>${template.subject} (${template.duration} דק)</span>
+                         <span class="delete-icon" onclick="deleteConstantTemplate(${index}, event)">🗑️</span>`;
+        container.appendChild(div);
       });
-      userTopics.forEach(topic => {
-        const opt = document.createElement("option");
-        opt.value = topic.value;
-        opt.textContent = topic.label;
-        select.appendChild(opt);
+    }
+
+    // Dropdown לתבניות קבועות – עדכון הרשימה
+    function updateTemplateList() {
+      const listDiv = document.getElementById("templateList");
+      listDiv.innerHTML = "";
+      constantTemplates.forEach((template, idx) => {
+        const container = document.createElement("div");
+        container.className = "template-item";
+        const btn = document.createElement("button");
+        btn.innerText = `${template.subject} (${template.duration} דק)`;
+        btn.style.flex = "1";
+        btn.onclick = function() {
+          selectedTemplate = template;
+          openAddItemModal();
+          document.getElementById("modalSubject").value = template.subject;
+          if (template.description) {
+            document.getElementById("modalDescription").value = template.description;
+          }
+        };
+        const delSpan = document.createElement("span");
+        delSpan.className = "delete-icon";
+        delSpan.innerText = "🗑️";
+        delSpan.onclick = function(event) { deleteConstantTemplate(idx, event); };
+        container.appendChild(btn);
+        container.appendChild(delSpan);
+        listDiv.appendChild(container);
       });
-      const addOpt = document.createElement("option");
-      addOpt.value = "add-new-topic";
-      addOpt.textContent = "🖋️ הוספת נושא";
-      select.appendChild(addOpt);
     }
 
-    function subjectChanged() {
-      const select = document.getElementById("modalSubject");
-      if (select.value === "add-new-topic") {
-        openNewTopicModal();
+    // פונקציות Firestore – שמירה וטעינה
+    function saveSchedulesToFirestore() {
+      const user = firebase.auth().currentUser;
+      if (user) {
+        db.collection("schedules").doc(user.uid).set({
+          schedules: savedSchedules
+        })
+        .then(() => { console.log("Schedules saved successfully"); })
+        .catch((error) => { console.error("Error saving schedules: ", error); });
       }
     }
 
-    function setupSubjectListener() {
-      document.getElementById("modalSubject").onchange = subjectChanged;
+    function loadSchedulesFromFirestore(user) {
+      db.collection("schedules").doc(user.uid).get().then((doc) => {
+        if (doc.exists) {
+          savedSchedules = doc.data().schedules || [];
+          renderScheduleItems();
+        } else {
+          savedSchedules = [];
+        }
+      }).catch((error) => {
+        console.error("Error loading schedules: ", error);
+      });
     }
 
-    function initializeSubjectDropdown() {
-      buildSubjectOptions();
-      setupSubjectListener();
-    }
+    firebase.auth().onAuthStateChanged((user) => {
+      if (user) {
+        updateUserGreeting(user);
+        loadSchedulesFromFirestore(user);
+      } else {
+        savedSchedules = [];
+        document.getElementById("scheduleContainer").innerHTML = "";
+      }
+    });
 
-    // --- מודאל "הוספת נושא" ---
-    function openNewTopicModal() {
-      document.getElementById("newTopicModal").style.display = "block";
-    }
-    function closeNewTopicModal() {
-      document.getElementById("newTopicModal").style.display = "none";
-      document.getElementById("newTopicInput").value = "";
-    }
-    function addNewTopicOneTime() {
-      const topic = document.getElementById("newTopicInput").value.trim();
-      if (topic === "") {
-        alert("אנא הזן שם לנושא");
-        return;
-      }
-      const select = document.getElementById("modalSubject");
-      const opt = document.createElement("option");
-      opt.value = topic;
-      opt.textContent = topic;
-      select.insertBefore(opt, select.lastElementChild);
-      select.value = topic;
-      closeNewTopicModal();
-    }
-    function addNewTopicPermanent() {
-      const topic = document.getElementById("newTopicInput").value.trim();
-      if (topic === "") {
-        alert("אנא הזן שם לנושא");
-        return;
-      }
-      const allOptions = Array.from(document.getElementById("modalSubject").options);
-      if (allOptions.some(opt => opt.value === topic)) {
-        alert("נושא זה כבר קיים");
-        return;
-      }
-      userTopics.push({ value: topic, label: topic });
-      buildSubjectOptions();
-      document.getElementById("modalSubject").value = topic;
-      closeNewTopicModal();
-    }
-
-    // --- ניהול לוזים ---
+    // פונקציות ניהול לוזים
     function goHome() {
       document.getElementById("content").innerHTML = '<p>ברוכים הבאים לאתר "זמן זהב". בחר אחת מהאפשרויות בתפריט כדי להתחיל.</p>';
     }
@@ -638,7 +669,6 @@
       scheduleName = null;
       editingIndex = -1;
       selectedTemplate = null;
-      initializeSubjectDropdown();
       document.getElementById("content").innerHTML = `
         <h2>בניית לוז למידה חדש</h2>
         <p>להוספת חלק ללו״ז, לחץ על הכפתור +</p>
@@ -672,10 +702,12 @@
       document.getElementById("content").innerHTML = html;
     }
 
+    // פונקציה למחיקת לוז שמור מהמערך savedSchedules
     function deleteSavedSchedule(index, event) {
       event.stopPropagation();
       if (confirm("האם למחוק את הלוז השמור?")) {
         savedSchedules.splice(index, 1);
+        // עדכון במסד
         const user = firebase.auth().currentUser;
         if (user) {
           db.collection("schedules").doc(user.uid).set({
@@ -708,9 +740,85 @@
       `;
     }
 
+    // למחיקת פריט לוז מהמערך scheduleItems (בעת בניית לוז)
+    function deleteScheduleItem(index) {
+      if (confirm("האם למחוק את הפריט?")) {
+        scheduleItems.splice(index, 1);
+        renderScheduleItems();
+        saveSchedulesToFirestore();
+      }
+    }
+
+    // פונקציה שמוסיפה סמיילי מחיקה לכל פריט – הסמיילי מוצג בתוך כל פריט
+    function renderScheduleItems() {
+      const container = document.getElementById("scheduleContainer");
+      container.innerHTML = "";
+      scheduleItems.forEach((item, idx) => {
+        const emoji = subjectEmojis[item.subject] || "";
+        const div = document.createElement("div");
+        div.className = "schedule-item";
+        div.setAttribute("data-subject", item.subject);
+        // יוצר אלמנט למחיקה
+        const delSpan = document.createElement("span");
+        delSpan.className = "delete-icon";
+        delSpan.innerText = "🗑️";
+        delSpan.onclick = function(event) {
+          event.stopPropagation();
+          deleteScheduleItem(idx);
+        };
+        // תוכן הפריט
+        div.innerHTML = `<h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
+                         <p>${item.description}</p>`;
+        div.prepend(delSpan);
+        div.onclick = function() {
+          editingIndex = idx;
+          document.getElementById("modalStartTime").value = item.startTime;
+          document.getElementById("modalEndTime").value = item.endTime;
+          document.getElementById("modalDescription").value = item.description;
+          const options = Array.from(document.getElementById("modalSubject").options);
+          document.getElementById("modalSubject").selectedIndex = options.findIndex(option => option.value === item.subject);
+          document.getElementById("addItemModalTitle").innerText = "עריכת חלק בלו״ז";
+          document.getElementById("addItemBtn").innerText = "שמור שינויים";
+          document.getElementById("addItemModal").style.display = "block";
+        };
+        container.appendChild(div);
+      });
+    }
+
+    function openFinalSchedule() {
+      if (!scheduleName) {
+        alert("עליך להזין שם ללו״ז ולבנות לפחות חלק אחד.");
+        return;
+      }
+      if (scheduleItems.length === 0) {
+        alert("עליך להוסיף לפחות חלק אחד ללו״ז.");
+        return;
+      }
+      const newSchedule = {
+        name: scheduleName,
+        scheduleItems: JSON.parse(JSON.stringify(scheduleItems))
+      };
+      savedSchedules.push(newSchedule);
+      saveSchedulesToFirestore();
+      document.getElementById("finalScheduleModal").style.display = "block";
+      document.getElementById("finalScheduleTitle").innerText = scheduleName;
+      let finalHtml = "";
+      scheduleItems.forEach(item => {
+        const emoji = subjectEmojis[item.subject] || "";
+        finalHtml += `<div class="schedule-item" data-subject="${item.subject}">
+                        <span class="delete-icon" onclick="deleteScheduleItemFromSaved(null, event, '${item.startTime}')">🗑️</span>
+                        <h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
+                        <p>${item.description}</p>
+                      </div>`;
+      });
+      document.getElementById("finalScheduleDisplay").innerHTML = finalHtml;
+    }
+
+    // למחיקת פריט מלוז שמור (אם רוצים למחוק פריט מסוים מהלוז השמור)
     function deleteScheduleItemFromSaved(scheduleIndex, event, startTime) {
       if (event) event.stopPropagation();
       if (confirm("האם למחוק את הפריט מהלוז השמור?")) {
+        // אם scheduleIndex קיים, מחיקה מהלוז השמור בתוך savedSchedules
         if (scheduleIndex !== null) {
           savedSchedules[scheduleIndex].scheduleItems = savedSchedules[scheduleIndex].scheduleItems.filter(item => item.startTime !== startTime);
           db.collection("schedules").doc(firebase.auth().currentUser.uid).set({
