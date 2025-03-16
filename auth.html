@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>התחברות - זמן זהב</title>
-  <!-- Firebase SDKs (משתמשים בגרסת compat) -->
+  <!-- Firebase SDKs (גרסת compat לצורך פשטות) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script>
-    // עדכן את הפרטים לפי הפרויקט שלך
+    // עדכן את הקונפיגורציה לפי הפרויקט שלך
     const firebaseConfig = {
       apiKey: "AIzaSyCsp7xKutteUAxmjYQsQWDlrjK7URg-MR8",
       authDomain: "zman-zhav.firebaseapp.com",
@@ -18,6 +18,7 @@
       appId: "1:685099855512:web:c3ad456591e1d92e436aed",
       measurementId: "G-XJ3LKJSW16"
     };
+    // אתחל את Firebase
     firebase.initializeApp(firebaseConfig);
   </script>
   <style>
@@ -84,6 +85,13 @@
       background-color: #f0f0f0;
       color: #333;
     }
+    /* הודעת שגיאה */
+    .error-message {
+      color: red;
+      font-size: 14px;
+      margin-top: 5px;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -93,16 +101,21 @@
       <button id="signinToggle" class="active" onclick="showSignIn()">התחברות</button>
       <button id="signupToggle" onclick="showSignUp()">יצירת חשבון</button>
     </div>
+    <!-- טופס התחברות -->
     <div id="signinForm">
       <input type="email" id="signinEmail" placeholder="אימייל">
       <input type="password" id="signinPassword" placeholder="סיסמה">
       <button onclick="signIn()">התחבר</button>
       <button onclick="signInWithGoogle()">התחבר עם גוגל</button>
     </div>
+    <!-- טופס יצירת חשבון -->
     <div id="signupForm" style="display: none;">
+      <input type="text" id="signupFirstName" placeholder="שם פרטי">
+      <input type="text" id="signupLastName" placeholder="שם משפחה">
       <input type="email" id="signupEmail" placeholder="אימייל">
       <input type="password" id="signupPassword" placeholder="סיסמה">
       <input type="password" id="signupPasswordConfirm" placeholder="אמת סיסמה">
+      <div id="passwordError" class="error-message">הסיסמה חייבת לכלול לפחות אות גדולה אחת או סימן מיוחד ולהיות באנגלית בלבד</div>
       <button onclick="signUp()">צור חשבון</button>
       <button onclick="signInWithGoogle()">התחבר עם גוגל</button>
     </div>
@@ -131,21 +144,51 @@
           window.location.href = "index.html";
         })
         .catch((error) => {
-          alert("שגיאה: " + error.message);
+          alert("שם משתמש או סיסמא לא נכונים");
         });
     }
     
     function signUp() {
-      const email = document.getElementById("signupEmail").value;
+      const firstName = document.getElementById("signupFirstName").value.trim();
+      const lastName = document.getElementById("signupLastName").value.trim();
+      const email = document.getElementById("signupEmail").value.trim();
       const password = document.getElementById("signupPassword").value;
       const passwordConfirm = document.getElementById("signupPasswordConfirm").value;
+      
+      if (!firstName || !lastName || !email || !password || !passwordConfirm) {
+        alert("אנא מלא את כל השדות");
+        return;
+      }
       if (password !== passwordConfirm) {
         alert("הסיסמאות אינן תואמות");
         return;
       }
+      
+      // בדיקת סיסמה: חייבת לכלול לפחות אות גדולה אחת או סימן מיוחד
+      // ולהיות מורכבת רק מתווים באנגלית
+      const uppercaseRegex = /[A-Z]/;
+      const specialRegex = /[!@#$%^&*(),.?":{}|<>]/;
+      const englishRegex = /^[\x00-\x7F]+$/;
+      
+      if (!(uppercaseRegex.test(password) || specialRegex.test(password)) || !englishRegex.test(password)) {
+        document.getElementById("signupPassword").style.borderColor = "red";
+        document.getElementById("signupPasswordConfirm").style.borderColor = "red";
+        document.getElementById("passwordError").style.display = "block";
+        return;
+      } else {
+        document.getElementById("signupPassword").style.borderColor = "";
+        document.getElementById("signupPasswordConfirm").style.borderColor = "";
+        document.getElementById("passwordError").style.display = "none";
+      }
+      
       firebase.auth().createUserWithEmailAndPassword(email, password)
         .then((userCredential) => {
-          window.location.href = "index.html";
+          const user = userCredential.user;
+          return user.updateProfile({
+            displayName: firstName + " " + lastName
+          }).then(() => {
+            window.location.href = "index.html";
+          });
         })
         .catch((error) => {
           alert("שגיאה: " + error.message);
