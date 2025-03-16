@@ -21,11 +21,10 @@
       appId: "1:685099855512:web:c3ad456591e1d92e436aed",
       measurementId: "G-XJ3LKJSW16"
     };
-    // אתחל את Firebase
     firebase.initializeApp(firebaseConfig);
     firebase.analytics();
 
-    // ניהול התחברות – פונקציה בסיסית עם Popup (אך ב-index.html אנו מציגים את Topbar עם קישור שמפנה לדף auth.html)
+    // פונקציית התחברות באמצעות גוגל (אם נבחר להתחבר באמצעות popup)
     function login() {
       const provider = new firebase.auth.GoogleAuthProvider();
       firebase.auth().signInWithPopup(provider)
@@ -37,9 +36,9 @@
         });
     }
 
-    // עדכון Topbar עם ברכת שלום בהתאם לשעה ולשם המשתמש
+    // עדכון Topbar עם ברכת שלום – משתמשים בשעת היום ובשם הפרטי (מ-displayName)
     function updateUserGreeting(user) {
-      const currentHour = new Date().getHours();
+      let currentHour = new Date().getHours();
       let greeting = "בוקר טוב";
       if (currentHour >= 12 && currentHour < 18) {
         greeting = "צהריים טובים";
@@ -47,19 +46,26 @@
         greeting = "ערב טוב";
       }
       const authLink = document.getElementById("authLink");
-      authLink.innerText = greeting + ", " + (user.displayName || user.email);
-      // לחיצה על השם תביא לאפשרות התנתקות
-      authLink.onclick = function() {
+      // אם יש שם תצוגה, נחלץ את השם הפרטי (נפרד לפי רווח)
+      let firstName = user.displayName ? user.displayName.split(" ")[0] : user.email;
+      authLink.innerText = greeting + "\n" + firstName + "!";
+      // כאשר לוחצים על השם – רק אם המשתמש מאשר ההתנתקות (אם בוחרים "אישור") מתבצעת ההתנתקות,
+      // ואם בוחרים "ביטול" – לא נעשית שום פעולה
+      authLink.onclick = function(event) {
+        event.preventDefault(); // מניעת ניווט לא רצוי
         if (confirm("להתנתק?")) {
           firebase.auth().signOut().then(() => {
             authLink.innerText = "התחברות";
-            authLink.onclick = () => { window.location.href = "auth.html"; };
+            // מאפס את פעולת הלחיצה כך שבמידה והמשתמש ילחץ שוב, הוא יועבר לדף ההתחברות
+            authLink.onclick = function() {
+              window.location.href = "auth.html";
+            };
           });
         }
       };
     }
 
-    // מאזין לשינוי מצב ההתחברות
+    // מאזין לשינוי מצב ההתחברות – אם המשתמש כבר מחובר, מעדכן את Topbar
     firebase.auth().onAuthStateChanged((user) => {
       if (user) {
         updateUserGreeting(user);
@@ -75,7 +81,7 @@
       background: linear-gradient(135deg, #e0eafc, #cfdef3);
       direction: rtl;
       padding-bottom: 40px;
-      padding-top: 120px;
+      padding-top: 120px; /* כדי שהתוכן לא יוסתר מאחורי ה-Topbar */
       text-align: center;
     }
     /* Topbar */
