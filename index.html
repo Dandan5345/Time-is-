@@ -2,11 +2,31 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8">
-  <!-- תגית viewport להתאמה למכשירים ניידים -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>זמן זהב - ניהול לוז יומי</title>
   <!-- ספריית html2canvas לצילום מסך -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- Firebase SDKs (גרסת compat לצורך פשטות) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-analytics-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script>
+    // עדכן את הקונפיגורציה לפי הפרויקט שלך
+    const firebaseConfig = {
+      apiKey: "AIzaSyCsp7xKutteUAxmjYQsQWDlrjK7URg-MR8",
+      authDomain: "zman-zhav.firebaseapp.com",
+      projectId: "zman-zhav",
+      storageBucket: "zman-zhav.firebasestorage.app",
+      messagingSenderId: "685099855512",
+      appId: "1:685099855512:web:c3ad456591e1d92e436aed",
+      measurementId: "G-XJ3LKJSW16"
+    };
+    // אתחל את Firebase
+    firebase.initializeApp(firebaseConfig);
+    firebase.analytics();
+    
+    // כאן תוכל להוסיף פונקציות Firebase נוספות אם תרצה
+  </script>
   <style>
     /* Reset בסיסי */
     * {
@@ -14,14 +34,14 @@
       padding: 0;
       box-sizing: border-box;
     }
-    /* רקע כללי עם גרדיינט */
+    /* גוף הדף – כולל padding עליון כדי שהתוכן לא יעלם מאחורי ה-Topbar */
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       line-height: 1.6;
       background: linear-gradient(135deg, #e0eafc, #cfdef3);
       direction: rtl;
       padding-bottom: 40px;
-      padding-top: 120px; /* כדי שהתוכן לא יעלם מאחורי ה-Topbar */
+      padding-top: 120px;
       text-align: center;
     }
     /* Topbar – כולל שם האתר ותפריט ניווט, מוצמד לראש המסך */
@@ -56,7 +76,6 @@
       transition: background-color 0.3s, box-shadow 0.3s;
       font-weight: bold;
       color: #ecf0f1;
-      /* גבול מימין להפרדה */
       border-right: 1px solid rgba(236,240,241,0.5);
     }
     .nav-links a:last-child {
@@ -146,7 +165,7 @@
     #templateDropdown button:hover {
       background: #e6f2ff;
     }
-    /* עיצוב רשימת פריטים – מרובעים עם פינות מעוגלות */
+    /* Schedule Item – כל חלק בלוז מוצג כריבוע מעוגל עם רקע בהיר */
     .schedule-item {
       position: relative;
       background-color: rgba(255, 255, 255, 0.9);
@@ -329,18 +348,9 @@
       font-weight: bold;
       cursor: pointer;
     }
-    .close:hover {
-      color: #000;
-    }
-    .form-group {
-      margin-bottom: 15px;
-      text-align: center;
-    }
-    .form-group label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-    }
+    .close:hover { color: #000; }
+    .form-group { margin-bottom: 15px; text-align: center; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
     .form-group input,
     .form-group select,
     .form-group textarea {
@@ -354,19 +364,10 @@
       text-align: right;
     }
     /* עיצוב למודאל "אלגנטי" */
-    .modal-elegant {
-      border: 2px solid #d4af37;
-    }
-    .modal-elegant h2 {
-      color: #2c3e50;
-    }
-    .modal-elegant .btn {
-      background-color: #2c3e50;
-    }
-    .modal-elegant .btn:hover {
-      background-color: #1a242f;
-    }
-    /* רשימת לוזים - כל פריט לחיץ */
+    .modal-elegant { border: 2px solid #d4af37; }
+    .modal-elegant h2 { color: #2c3e50; }
+    .modal-elegant .btn { background-color: #2c3e50; }
+    .modal-elegant .btn:hover { background-color: #1a242f; }
     .saved-schedule-item {
       background-color: #fff;
       margin: 10px auto;
@@ -379,31 +380,22 @@
       color: #2c3e50;
       max-width: 400px;
     }
-    /* התאמה לניידים */
     @media (max-width: 600px) {
-      .topbar {
-        flex-direction: column;
-        gap: 10px;
-      }
-      .site-name {
-        font-size: 24px;
-      }
-      .nav-links a {
-        padding: 10px;
-        width: 100%;
-        text-align: center;
-      }
+      .topbar { flex-direction: column; gap: 10px; }
+      .site-name { font-size: 24px; }
+      .nav-links a { padding: 10px; width: 100%; text-align: center; }
     }
   </style>
 </head>
 <body>
-  <!-- Topbar: שם האתר ותפריט ניווט, מוצמד לראש המסך -->
+  <!-- Topbar: שם האתר ותפריט ניווט -->
   <nav class="topbar">
     <div class="site-name" onclick="goHome()">זמן זהב</div>
     <div class="nav-links">
       <a href="#" onclick="loadNewScheduleExplanation(event)">לו״ז חדש</a>
       <a href="#" onclick="loadMySchedules(event)">הלוזי״ם שלי</a>
       <a href="#" onclick="loadHowToUse(event)">איך משתמשים</a>
+      <a href="auth.html" id="authLink">התחברות</a>
     </div>
   </nav>
   
@@ -412,7 +404,7 @@
     <p>ברוכים הבאים לאתר "זמן זהב". בחר אחת מהאפשרויות בתפריט כדי להתחיל.</p>
   </main>
   
-  <!-- Footer (מופיע רק בתחתית הדף) -->
+  <!-- Footer -->
   <footer>
     ©️doronnakache
   </footer>
@@ -546,7 +538,7 @@
           selectedTemplate = template;
           openAddItemModal();
           document.getElementById("modalSubject").value = template.subject;
-          if(template.description) {
+          if (template.description) {
             document.getElementById("modalDescription").value = template.description;
           }
         };
@@ -554,7 +546,7 @@
       });
     }
     
-    // פתיחת מודאל יצירת תבנית לוז קבוע
+    // מודאל יצירת תבנית לוז קבוע
     function openConstantTemplateModal() {
       document.getElementById("constantTemplateModal").style.display = "block";
       document.getElementById("templateDropdown").style.display = "none";
@@ -666,7 +658,7 @@
       return (h < 10 ? "0" + h : h) + ":" + (m < 10 ? "0" + m : m);
     }
     
-    // פתיחת מודאל הוספת חלק – אם קיימים חלקים, השעת התחלה תהיה דקה אחרי שעת הסיום של החלק האחרון
+    // פתיחת מודאל הוספת חלק
     function openAddItemModal() {
       if (!scheduleName) {
         document.getElementById("scheduleNameModal").style.display = "block";
@@ -699,7 +691,7 @@
     function saveScheduleName() {
       const nameInput = document.getElementById("scheduleNameInput").value.trim();
       if (nameInput === "") {
-        alert("אנא הכנס שם ללו״ז.");
+        alert("אנא הזן שם ללו״ז.");
         return;
       }
       if (savedSchedules.some(sch => sch.name === nameInput)) {
@@ -736,7 +728,7 @@
       document.getElementById("modalDescription").value = "";
     }
     
-    // עדכון שעת הסיום: אם נבחרת תבנית, נוסיף את משך הזמן; אחרת, שעה אחת אחרי
+    // עדכון שעת הסיום
     function setDefaultEndTime() {
       const startTime = document.getElementById("modalStartTime").value;
       if (startTime) {
