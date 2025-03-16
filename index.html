@@ -24,17 +24,51 @@
     // אתחל את Firebase
     firebase.initializeApp(firebaseConfig);
     firebase.analytics();
-    
-    // כאן תוכל להוסיף פונקציות Firebase נוספות אם תרצה
+
+    // ניהול התחברות – פונקציה בסיסית עם Popup (אך ב-index.html אנו מציגים את Topbar עם קישור שמפנה לדף auth.html)
+    function login() {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      firebase.auth().signInWithPopup(provider)
+        .then((result) => {
+          updateUserGreeting(result.user);
+        })
+        .catch((error) => {
+          alert("שגיאה בהתחברות: " + error.message);
+        });
+    }
+
+    // עדכון Topbar עם ברכת שלום בהתאם לשעה ולשם המשתמש
+    function updateUserGreeting(user) {
+      const currentHour = new Date().getHours();
+      let greeting = "בוקר טוב";
+      if (currentHour >= 12 && currentHour < 18) {
+        greeting = "צהריים טובים";
+      } else if (currentHour >= 18) {
+        greeting = "ערב טוב";
+      }
+      const authLink = document.getElementById("authLink");
+      authLink.innerText = greeting + ", " + (user.displayName || user.email);
+      // לחיצה על השם תביא לאפשרות התנתקות
+      authLink.onclick = function() {
+        if (confirm("להתנתק?")) {
+          firebase.auth().signOut().then(() => {
+            authLink.innerText = "התחברות";
+            authLink.onclick = () => { window.location.href = "auth.html"; };
+          });
+        }
+      };
+    }
+
+    // מאזין לשינוי מצב ההתחברות
+    firebase.auth().onAuthStateChanged((user) => {
+      if (user) {
+        updateUserGreeting(user);
+      }
+    });
   </script>
   <style>
     /* Reset בסיסי */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    /* גוף הדף – כולל padding עליון כדי שהתוכן לא יעלם מאחורי ה-Topbar */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       line-height: 1.6;
@@ -44,7 +78,7 @@
       padding-top: 120px;
       text-align: center;
     }
-    /* Topbar – כולל שם האתר ותפריט ניווט, מוצמד לראש המסך */
+    /* Topbar */
     .topbar {
       background-color: #34495e;
       display: flex;
@@ -78,242 +112,88 @@
       color: #ecf0f1;
       border-right: 1px solid rgba(236,240,241,0.5);
     }
-    .nav-links a:last-child {
-      border-right: none;
-    }
+    .nav-links a:last-child { border-right: none; }
     .nav-links a:hover {
       background-color: #3d566e;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
     /* Main Content */
-    main {
-      padding: 20px;
-      margin-top: 20px;
-      min-height: 70vh;
-      text-align: center;
-    }
+    main { padding: 20px; margin-top: 20px; min-height: 70vh; text-align: center; }
     /* Footer */
-    footer {
-      text-align: center;
-      padding: 10px;
-      color: #7f8c8d;
-      font-size: 14px;
-    }
-    /* קונטיינר לכפתורי פעולה בדף בניית לוז */
-    .action-buttons {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 10px;
-      position: relative;
-    }
-    /* כפתורים */
-    .btn {
-      display: inline-block;
-      padding: 10px 20px;
-      background-color: #3a506b;
-      color: #fff;
-      border: none;
-      cursor: pointer;
-      font-size: 16px;
-      border-radius: 8px;
-      transition: background-color 0.3s;
-    }
-    .btn:hover {
-      background-color: #2a3e56;
-    }
-    /* לחצן תפריט תבניות (שלוש נקודות) */
-    #templateMenuButton {
-      background-color: #3a506b;
-      border: none;
-      border-radius: 8px;
-      font-size: 24px;
-      cursor: pointer;
-      color: #ecf0f1;
-      padding: 5px 10px;
-    }
-    /* Dropdown לתבניות קבועות – נפתח מעל הלחצן */
+    footer { text-align: center; padding: 10px; color: #7f8c8d; font-size: 14px; }
+    /* Action Buttons */
+    .action-buttons { display: inline-flex; align-items: center; gap: 10px; margin-top: 10px; position: relative; }
+    .btn { display: inline-block; padding: 10px 20px; background-color: #3a506b; color: #fff; border: none; cursor: pointer; font-size: 16px; border-radius: 8px; transition: background-color 0.3s; }
+    .btn:hover { background-color: #2a3e56; }
+    #templateMenuButton { background-color: #3a506b; border: none; border-radius: 8px; font-size: 24px; cursor: pointer; color: #ecf0f1; padding: 5px 10px; }
     #templateDropdown {
-      position: absolute;
-      bottom: 100%;
-      right: 0;
-      background: #f8f8f8;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      display: none;
-      z-index: 1500;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      min-width: 200px;
+      position: absolute; bottom: 100%; right: 0;
+      background: #f8f8f8; border: 1px solid #ccc; border-radius: 8px;
+      display: none; z-index: 1500; box-shadow: 0 2px 6px rgba(0,0,0,0.2); min-width: 200px;
     }
     #templateDropdown button {
-      background: none;
-      border: none;
-      width: 100%;
-      padding: 10px;
-      text-align: right;
-      cursor: pointer;
-      transition: background 0.2s;
-      font-weight: normal;
-      color: #2c3e50;
+      background: none; border: none; width: 100%; padding: 10px; text-align: right; cursor: pointer;
+      transition: background 0.2s; font-weight: normal; color: #2c3e50;
     }
-    /* לחצן "צור לוז קבוע" – רקע תכלת */
     #templateDropdown button:first-child {
-      background-color: #cce5ff;
-      border-radius: 6px;
-      margin-bottom: 5px;
+      background-color: #cce5ff; border-radius: 6px; margin-bottom: 5px;
     }
-    #templateDropdown button:hover {
-      background: #e6f2ff;
-    }
-    /* Schedule Item – כל חלק בלוז מוצג כריבוע מעוגל עם רקע בהיר */
+    #templateDropdown button:hover { background: #e6f2ff; }
+    /* Schedule Item */
     .schedule-item {
-      position: relative;
-      background-color: rgba(255, 255, 255, 0.9);
-      padding: 15px;
-      margin: 10px auto;
-      border-radius: 12px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      cursor: pointer;
-      text-align: center;
-      max-width: 400px;
-      transition: transform 0.2s;
-      overflow: hidden;
+      position: relative; background-color: rgba(255,255,255,0.9); padding: 15px; margin: 10px auto;
+      border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;
+      text-align: center; max-width: 400px; transition: transform 0.2s; overflow: hidden;
     }
-    .schedule-item:hover {
-      transform: scale(1.02);
-    }
-    .schedule-item h3 {
-      margin-bottom: 5px;
-      color: #2c3e50;
-    }
-    /* ווטרמרקים לפי נושא – שמות מלאים */
+    .schedule-item:hover { transform: scale(1.02); }
+    .schedule-item h3 { margin-bottom: 5px; color: #2c3e50; }
     .schedule-item[data-subject="קריאה של חומר לימוד"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/book.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .schedule-item[data-subject="תרגול"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/pencil.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .schedule-item[data-subject="מעבר על חומר מהיר"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/speed.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .schedule-item[data-subject="למידה עמוקה"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/search.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .schedule-item[data-subject="לקום"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/alarm-clock.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .schedule-item[data-subject="הפסקה"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/coffee.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .schedule-item[data-subject="ללכת לישון"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/sleep.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .schedule-item[data-subject="אוכל"]::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 80%;
-      height: 80%;
+      content: ""; position: absolute; top: 50%; left: 50%; width: 80%; height: 80%;
       background-image: url('https://img.icons8.com/fluency/96/000000/food.png');
-      background-repeat: no-repeat;
-      background-position: center;
-      background-size: contain;
-      opacity: 0.1;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      border-radius: inherit;
+      background-repeat: no-repeat; background-position: center; background-size: contain;
+      opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     /* מודאלים */
     .modal {
@@ -338,7 +218,6 @@
       box-shadow: 0 4px 8px rgba(0,0,0,0.2);
       text-align: center;
     }
-    /* כפתור סגירה - בצד שמאל */
     .close {
       color: #aaa;
       position: absolute;
@@ -363,7 +242,6 @@
       background-color: #f9f9f9;
       text-align: right;
     }
-    /* עיצוב למודאל "אלגנטי" */
     .modal-elegant { border: 2px solid #d4af37; }
     .modal-elegant h2 { color: #2c3e50; }
     .modal-elegant .btn { background-color: #2c3e50; }
@@ -651,10 +529,7 @@
     function addOneMinute(timeStr) {
       let [h, m] = timeStr.split(":").map(Number);
       m++;
-      if (m >= 60) {
-        m = 0;
-        h = (h + 1) % 24;
-      }
+      if (m >= 60) { m = 0; h = (h + 1) % 24; }
       return (h < 10 ? "0" + h : h) + ":" + (m < 10 ? "0" + m : m);
     }
     
@@ -676,7 +551,7 @@
         setDefaultEndTime();
         if (selectedTemplate) {
           document.getElementById("modalSubject").value = selectedTemplate.subject;
-          if(selectedTemplate.description){
+          if(selectedTemplate.description) {
             document.getElementById("modalDescription").value = selectedTemplate.description;
           }
         }
