@@ -154,7 +154,9 @@
           </div>
         </div>
         <div id="scheduleContainer"></div>
-        <button class="btn" style="margin-top:20px;" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
+        <div class="button-group">
+          <button class="btn" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
+        </div>
       `;
     }
 
@@ -199,7 +201,7 @@
       document.getElementById("content").innerHTML = `
         <h2>${sch.name}</h2>
         <div id="finalScheduleDisplay">${finalHtml}</div>
-        <div style="margin-top:20px;">
+        <div class="button-group">
           <button class="btn" onclick="captureScreenshotFromElement('finalScheduleDisplay', '${sch.name}')">צילום מסך של הלו״ז</button>
           <button class="btn" onclick="copyScheduleToClipboardFromSchedule(${idx})">העתקת הלו״ז להודעה</button>
           <button class="btn" onclick="editSavedSchedule(${idx})">ערוך לוז</button>
@@ -345,7 +347,9 @@
           </div>
         </div>
         <div id="scheduleContainer"></div>
-        <button class="btn" style="margin-top:20px;" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
+        <div class="button-group">
+          <button class="btn" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
+        </div>
       `;
       openAddItemModal();
     }
@@ -481,7 +485,6 @@
     }
 
     // פונקציות לעריכת לוזים שמורים
-
     function editSavedSchedule(idx) {
       editingSavedScheduleIndex = idx;
       const sch = savedSchedules[idx];
@@ -507,7 +510,9 @@
           </div>
         </div>
         <div id="scheduleContainer"></div>
-        <button class="btn" style="margin-top:20px;" onclick="finishEditingSchedule()">סיים עריכה</button>
+        <div class="button-group">
+          <button class="btn" onclick="finishEditingSchedule()">סיים עריכה</button>
+        </div>
       `;
     }
 
@@ -906,6 +911,14 @@
       color: #2c3e50;
       max-width: 400px;
     }
+    /* מחלקת כפתורים עם מרווח */
+    .button-group {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
     @media (max-width: 600px) {
       .topbar { flex-direction: column; gap: 10px; }
       .site-name { font-size: 24px; }
@@ -987,7 +1000,7 @@
       <span class="close" onclick="closeFinalScheduleModal()">&times;</span>
       <h2 id="finalScheduleTitle"></h2>
       <div id="finalScheduleDisplay"></div>
-      <div style="margin-top:20px;">
+      <div class="button-group">
         <button class="btn" onclick="captureScreenshot()">צילום מסך של הלו״ז</button>
         <button class="btn" onclick="copyScheduleToClipboard()">העתקת הלו״ז להודעה</button>
         <button class="btn" onclick="closeFinalScheduleModal()">סיום</button>
