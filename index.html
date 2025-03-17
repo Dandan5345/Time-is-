@@ -4,9 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>זמן זהב - ניהול לוז יומי</title>
-  <!-- ספריית html2canvas לצילום מסך -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <!-- Firebase SDKs (גרסת compat לצורך פשטות) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-analytics-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -27,7 +25,21 @@
     // אתחל את Firestore
     const db = firebase.firestore();
 
-    // פונקציות התחברות – כאן הקוד עובד גם עם התחברות דרך גוגל (אם יש) והעדכון ב־Topbar
+    // משתנים גלובליים
+    let scheduleItems = [];
+    let scheduleName = null;
+    let savedSchedules = [];
+    let editingIndex = -1;
+    let constantTemplates = [];
+    let selectedTemplate = null;
+    let permanentSubjects = [];
+
+    // משתנים לעריכת לוז שמור
+    let editingSavedScheduleIndex = -1;
+    let originalScheduleItems = [];
+    let originalScheduleName = "";
+
+    // פונקציות התחברות – התחברות דרך גוגל, עדכון Topbar, טעינת ושמירת לוזים
     function login() {
       const provider = new firebase.auth.GoogleAuthProvider();
       firebase.auth().signInWithPopup(provider)
@@ -48,7 +60,7 @@
         greeting = "ערב טוב";
       }
       const authLink = document.getElementById("authLink");
-      // חילוץ השם הפרטי מתוך displayName (מניח שהמשתמש הזין שם מלא)
+      // חילוץ השם הפרטי מתוך displayName (אם לא – מוצג האימייל)
       let firstName = user.displayName ? user.displayName.split(" ")[0] : user.email;
       authLink.innerText = greeting + "\n" + firstName + "!";
       authLink.onclick = function(event) {
@@ -62,7 +74,6 @@
       };
     }
 
-    // טעינת הלוזים מה-Firestore עבור המשתמש המחובר
     function loadSchedulesFromFirestore(user) {
       db.collection("schedules").doc(user.uid).get()
         .then((doc) => {
@@ -78,7 +89,6 @@
         });
     }
 
-    // שמירת הלוזים ב-Firestore
     function saveSchedulesToFirestore() {
       const user = firebase.auth().currentUser;
       if (user) {
@@ -90,7 +100,6 @@
       }
     }
 
-    // מאזין לשינוי מצב ההתחברות – טוען את הלוזים אם המשתמש מחובר, ומנקה את הממשק אם לא
     firebase.auth().onAuthStateChanged((user) => {
       if (user) {
         updateUserGreeting(user);
@@ -100,6 +109,616 @@
         document.getElementById("scheduleContainer").innerHTML = "";
       }
     });
+
+    // מיפוי נושאים לאמוג'ים
+    const subjectEmojis = {
+      "קריאה של חומר לימוד": "📖",
+      "תרגול": "📝",
+      "מעבר על חומר מהיר": "⏩",
+      "למידה עמוקה": "🔍",
+      "לקום": "⏰",
+      "הפסקה": "☕",
+      "ללכת לישון": "😴",
+      "אוכל": "🍽️"
+    };
+
+    // פונקציות לניווט בין דפים
+    function goHome() {
+      document.getElementById("content").innerHTML = '<p>ברוכים הבאים לאתר "זמן זהב". בחר אחת מהאפשרויות בתפריט כדי להתחיל.</p>';
+    }
+
+    function loadNewScheduleExplanation(event) {
+      event.preventDefault();
+      document.getElementById("content").innerHTML = `
+        <h2>מה זה לו״ז חדש?</h2>
+        <p>זוהי מערכת לניהול זמן לסטודנטים, המאפשרת ליצור לוז למידה בצורה מהירה ונוחה. ניתן לבנות לוז, להוסיף חלקים, לשמור, לערוך, לצלם מסך ולהעתיק את הלו״ז להודעה.</p>
+        <button class="btn" onclick="loadNewScheduleBuilder()">בניית לוז למידה חדש</button>
+      `;
+    }
+
+    function loadNewScheduleBuilder() {
+      // איפוס משתנים
+      scheduleItems = [];
+      scheduleName = null;
+      editingIndex = -1;
+      selectedTemplate = null;
+      document.getElementById("content").innerHTML = `
+        <h2>בניית לוז למידה חדש</h2>
+        <p>להוספת חלק ללו״ז, לחץ על הכפתור +</p>
+        <div class="action-buttons">
+          <button class="btn" onclick="openAddItemModal()">+</button>
+          <button id="templateMenuButton" onclick="toggleTemplateDropdown()">⋮</button>
+          <div id="templateDropdown">
+            <button onclick="openConstantTemplateModal()">צור לוז קבוע</button>
+            <div id="templateList"></div>
+          </div>
+        </div>
+        <div id="scheduleContainer"></div>
+        <button class="btn" style="margin-top:20px;" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
+      `;
+    }
+
+    function loadMySchedules(event) {
+      event.preventDefault();
+      let html = `<h2>הלוזי״ם שלי</h2>`;
+      if (savedSchedules.length === 0) {
+        html += `<p>אין לוזים שמורים.</p>`;
+      } else {
+        html += `<ul style="list-style: none; padding:0;">`;
+        savedSchedules.forEach((sch, idx) => {
+          html += `<li class="saved-schedule-item" onclick="viewSavedSchedule(${idx})">
+                     <span style="float: left; cursor: pointer;" onclick="event.stopPropagation(); deleteSavedSchedule(${idx})">🗑️</span>
+                     ${sch.name}
+                   </li>`;
+        });
+        html += `</ul>`;
+      }
+      document.getElementById("content").innerHTML = html;
+    }
+
+    function deleteSavedSchedule(index) {
+      if (confirm("האם אתה בטוח שברצונך למחוק את הלו״ז הזה?")) {
+        savedSchedules.splice(index, 1);
+        saveSchedulesToFirestore();
+        loadMySchedules(event);
+        alert("הלו״ז נמחק.");
+      }
+    }
+
+    // צפייה בלוז שמור עם אפשרות עריכה
+    function viewSavedSchedule(idx) {
+      const sch = savedSchedules[idx];
+      let finalHtml = "";
+      sch.scheduleItems.forEach(item => {
+        const emoji = subjectEmojis[item.subject] || "";
+        finalHtml += `<div class="schedule-item" data-subject="${item.subject}">
+                        <h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
+                        <p>${item.description}</p>
+                      </div>`;
+      });
+      document.getElementById("content").innerHTML = `
+        <h2>${sch.name}</h2>
+        <div id="finalScheduleDisplay">${finalHtml}</div>
+        <div style="margin-top:20px;">
+          <button class="btn" onclick="captureScreenshotFromElement('finalScheduleDisplay', '${sch.name}')">צילום מסך של הלו״ז</button>
+          <button class="btn" onclick="copyScheduleToClipboardFromSchedule(${idx})">העתקת הלו״ז להודעה</button>
+          <button class="btn" onclick="editSavedSchedule(${idx})">ערוך לוז</button>
+          <button class="btn" onclick="closeFinalScheduleModal(); goHome();">סיום</button>
+        </div>
+      `;
+    }
+
+    function loadHowToUse(event) {
+  event.preventDefault();
+  document.getElementById("content").innerHTML = `
+    <h2 style="margin-bottom: 20px;">איך משתמשים באתר "זמן זהב"?</h2>
+    <div style="max-width: 700px; margin: 0 auto; text-align: right; line-height: 1.6;">
+      <p>
+        אתר "זמן זהב" תוכנן כדי לסייע לכולנו – סטודנטים, עובדים, הורים, וכל מי שרוצה – 
+        ליצור ולנהל לוחות זמנים (לו"ז) בצורה קלה, מהירה וגמישה. בכל פעם שתרצו לתכנן יום לימודים, 
+        שבוע בעבודה או אפילו חופשה משפחתית, האתר יספק לכם כלים נוחים לתכנון ומעקב.
+      </p>
+
+      <h3 style="margin-top: 20px;">כיצד מתחילים?</h3>
+      <ul style="list-style: none; padding: 0;">
+        <li style="margin-bottom: 10px;">
+          <strong>1. "לו״ז חדש":</strong> לחצו על הכפתור <em>לו״ז חדש</em> בתפריט העליון. תגיעו להסבר קצר ומשם 
+          תוכלו לעבור ל<b>בניית לוז</b> חדש.
+        </li>
+        <li style="margin-bottom: 10px;">
+          <strong>2. יצירת חלק בלו"ז:</strong> בתוך מסך בניית הלו"ז, לחצו על הסמל <b>(+)</b> להוספת חלק. בחרו 
+          שעת התחלה, שעת סיום ונושא (כמו "קריאה מהירה", "טיול", "ישיבת עבודה"). ניתן להוסיף 
+          נושאים חדשים או להשתמש בנושאים קיימים, ואף לשמור אותם כקבועים לשימוש חוזר.
+        </li>
+        <li style="margin-bottom: 10px;">
+          <strong>3. תיאור פעילות:</strong> לכל חלק אפשר לצרף כמה מילים בתיאור (למשל, מה בדיוק עושים, מטרות, 
+          ציוד שצריך, וכדומה).
+        </li>
+        <li style="margin-bottom: 10px;">
+          <strong>4. תבניות קבועות:</strong> אם אתם מתכננים פעילות שחוזרת על עצמה (למשל "למידה עמוקה 90 דקות") 
+          ניתן ללחוץ על שלוש הנקודות <em>(⋮)</em> במסך בניית הלוז, לבחור "צור לוז קבוע", ולהגדיר תבנית 
+          שתוכלו לשלב שוב ושוב בקלות.
+        </li>
+        <li style="margin-bottom: 10px;">
+          <strong>5. שמירה וסיום:</strong> אחרי שהוספתם את כל החלקים, לחצו על כפתור <b>"שומר וסיים לו״ז"</b> 
+          ותוכלו לראות את הלוז הסופי שלכם. שם תוכלו לצלם מסך של הלוז (לשיתוף חברים, למשל) 
+          או להעתיק את הטקסט המלא ישירות להודעה/מייל.
+        </li>
+        <li style="margin-bottom: 10px;">
+          <strong>6. הלוזי״ם שלי:</strong> בלשונית <b>"הלוזי״ם שלי"</b> תוכלו למצוא את כל הלוזים ששמרתם. כל לוז 
+          ניתן לפתוח שוב, לערוך, או למחוק. כך תוכלו לחזור ולשפר תכניות שהכנתם מראש.
+        </li>
+      </ul>
+
+      <h3 style="margin-top: 20px;">טיפים לשימוש יעיל</h3>
+      <ul style="list-style: none; padding: 0;">
+        <li style="margin-bottom: 8px;">
+          <b>• הקלו על עצמכם עם נושאים קבועים:</b> אם יש פעילות שחוזרת על עצמה לעיתים קרובות 
+          (כמו "ניקיון שבועי", "שיעור זום", "ריצה בבוקר"), שמרו אותה כנושא קבוע כדי לחסוך זמן בהמשך.
+        </li>
+        <li style="margin-bottom: 8px;">
+          <b>• היו יצירתיים:</b> אפשר להוסיף סמיילים ותיאורים צבעוניים לכל פעילות, 
+          מה שהופך את הלוז למהנה וברור יותר.
+        </li>
+        <li style="margin-bottom: 8px;">
+          <b>• שתפו אחרים:</b> אחרי שבניתם לוז, תוכלו לשתף אותו בקלות בעזרת העתקה להודעה, או לשלוח צילומי מסך. 
+          כך כל מי שמעורב בעניין ידע מה קורה ומתי.
+        </li>
+        <li style="margin-bottom: 8px;">
+          <b>• נסו גם לתכנן חופשות!</b> אתם יכולים להוסיף חלקים בלוז המותאמים לחופשה, 
+          כמו "נסיעה", "ביקור באטרקציה" או "הפסקת צהריים בים". כל דבר, בכל זמן.
+        </li>
+      </ul>
+
+      <p style="margin-top: 20px;">
+        מקווים שהאתר יהפוך את התכנון שלכם ליעיל וכיפי יותר. שיהיה המון זמן זהב!
+      </p>
+    </div>
+  `;
+}
+
+    function addOneMinute(timeStr) {
+      let [h, m] = timeStr.split(":").map(Number);
+      m++;
+      if (m >= 60) { m = 0; h = (h + 1) % 24; }
+      return (h < 10 ? "0" + h : h) + ":" + (m < 10 ? "0" + m : m);
+    }
+
+    // פתיחת מודל להוספת חלק בלוז
+    function openAddItemModal() {
+      if (!scheduleName) {
+        document.getElementById("scheduleNameModal").style.display = "block";
+      } else {
+        editingIndex = -1;
+        document.getElementById("addItemModalTitle").innerText = "הוספת חלק ללו״ז";
+        document.getElementById("addItemBtn").innerText = "סיום והוסף";
+        if (scheduleItems.length > 0) {
+          let lastItem = scheduleItems[scheduleItems.length - 1];
+          let nextStart = addOneMinute(lastItem.endTime);
+          document.getElementById("modalStartTime").value = nextStart;
+        } else {
+          document.getElementById("modalStartTime").value = "";
+        }
+        setDefaultEndTime();
+        if (selectedTemplate) {
+          document.getElementById("modalSubject").value = selectedTemplate.subject;
+          if(selectedTemplate.description) {
+            document.getElementById("modalDescription").value = selectedTemplate.description;
+          }
+        }
+        updateSubjectDropdownOptions();
+        updatePermanentSubjectsList();
+        if (document.getElementById("modalSubject").value === "addSubject") {
+          openAddSubjectModal();
+          document.getElementById("modalSubject").value = "קריאה של חומר לימוד";
+        } else {
+          document.getElementById("addItemModal").style.display = "block";
+        }
+      }
+    }
+
+    function closeScheduleNameModal() {
+      document.getElementById("scheduleNameModal").style.display = "none";
+    }
+
+    function saveScheduleName() {
+      const nameInput = document.getElementById("scheduleNameInput").value.trim();
+      if (nameInput === "") {
+        alert("אנא הזן שם ללו״ז.");
+        return;
+      }
+      if (savedSchedules.some(sch => sch.name === nameInput)) {
+        alert("לוז עם שם זה כבר קיים. אנא בחר שם אחר.");
+        return;
+      }
+      scheduleName = nameInput;
+      closeScheduleNameModal();
+      document.getElementById("content").innerHTML = `
+        <h2>${scheduleName}</h2>
+        <p>להוספת חלק חדש, לחץ על הכפתור +</p>
+        <div class="action-buttons">
+          <button class="btn" onclick="openAddItemModal()">+</button>
+          <button id="templateMenuButton" onclick="toggleTemplateDropdown()">⋮</button>
+          <div id="templateDropdown">
+            <button onclick="openConstantTemplateModal()">צור לוז קבוע</button>
+            <div id="templateList"></div>
+          </div>
+        </div>
+        <div id="scheduleContainer"></div>
+        <button class="btn" style="margin-top:20px;" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
+      `;
+      openAddItemModal();
+    }
+
+    function closeAddItemModal() {
+      document.getElementById("addItemModal").style.display = "none";
+      clearAddItemForm();
+    }
+
+    function clearAddItemForm() {
+      document.getElementById("modalStartTime").value = "";
+      document.getElementById("modalEndTime").value = "";
+      document.getElementById("modalDescription").value = "";
+      document.getElementById("modalSubject").value = "קריאה של חומר לימוד";
+    }
+
+    function setDefaultEndTime() {
+      const startTime = document.getElementById("modalStartTime").value;
+      if (startTime) {
+        let endTime;
+        if (selectedTemplate) {
+          let [h, m] = startTime.split(":").map(Number);
+          let total = h * 60 + m + selectedTemplate.duration;
+          total = total % (24 * 60);
+          let newH = Math.floor(total / 60);
+          let newM = total % 60;
+          endTime = (newH < 10 ? "0" + newH : newH) + ":" + (newM < 10 ? "0" + newM : newM);
+        } else {
+          let [h, m] = startTime.split(":").map(Number);
+          h = (h + 1) % 24;
+          endTime = (h < 10 ? "0" + h : h) + ":" + (m < 10 ? "0" + m : m);
+        }
+        const endInput = document.getElementById("modalEndTime");
+        endInput.value = endTime;
+        endInput.min = startTime;
+      }
+    }
+
+    function saveItem() {
+      const startTime = document.getElementById("modalStartTime").value;
+      const endTime = document.getElementById("modalEndTime").value;
+      const subjectSelect = document.getElementById("modalSubject");
+      const subject = subjectSelect.value;
+      const description = document.getElementById("modalDescription").value;
+
+      if (!startTime || !endTime) {
+        alert("אנא בחר שעת התחלה ושעת סיום.");
+        return;
+      }
+      if (startTime >= endTime) {
+        alert("שעת ההתחלה חייבת להיות מוקדמת משעת הסיום.");
+        return;
+      }
+      if (editingIndex === -1 && scheduleItems.some(item => item.startTime === startTime)) {
+        alert("כבר קיים פריט עם שעת התחלה זו.");
+        return;
+      }
+
+      const newItem = { startTime, endTime, subject, description };
+      if (editingIndex === -1) {
+        scheduleItems.push(newItem);
+      } else {
+        scheduleItems[editingIndex] = newItem;
+      }
+      scheduleItems.sort((a, b) => a.startTime.localeCompare(b.startTime));
+      renderScheduleItems();
+      closeAddItemModal();
+      saveSchedulesToFirestore();
+    }
+
+    function renderScheduleItems() {
+      const container = document.getElementById("scheduleContainer");
+      container.innerHTML = "";
+      scheduleItems.forEach((item, idx) => {
+        const emoji = subjectEmojis[item.subject] || "";
+        const div = document.createElement("div");
+        div.className = "schedule-item";
+        div.setAttribute("data-subject", item.subject);
+        div.innerHTML = `<span style="float: left; cursor: pointer;" onclick="event.stopPropagation(); deleteScheduleItem(${idx})">🗑️</span>
+                         <h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
+                         <p>${item.description}</p>`;
+        div.onclick = function() {
+          editingIndex = idx;
+          document.getElementById("modalStartTime").value = item.startTime;
+          document.getElementById("modalEndTime").value = item.endTime;
+          document.getElementById("modalDescription").value = item.description;
+          const options = Array.from(document.getElementById("modalSubject").options);
+          document.getElementById("modalSubject").selectedIndex = options.findIndex(option => option.value === item.subject);
+          document.getElementById("addItemModalTitle").innerText = "עריכת חלק בלו״ז";
+          document.getElementById("addItemBtn").innerText = "שמור שינויים";
+          document.getElementById("addItemModal").style.display = "block";
+        };
+        container.appendChild(div);
+      });
+    }
+
+    function deleteScheduleItem(index) {
+      if (confirm("האם אתה בטוח שברצונך למחוק את החלק הזה מהלו״ז?")) {
+        scheduleItems.splice(index, 1);
+        renderScheduleItems();
+        saveSchedulesToFirestore();
+        alert("החלק נמחק מהלו״ז.");
+      }
+    }
+
+    // סיום לו״ז חדש – שמירת הלוז החדש ושמירה במערך
+    function openFinalSchedule() {
+      if (!scheduleName) {
+        alert("עליך להזין שם ללו״ז ולבנות לפחות חלק אחד.");
+        return;
+      }
+      if (scheduleItems.length === 0) {
+        alert("עליך להוסיף לפחות חלק אחד ללו״ז.");
+        return;
+      }
+      const newSchedule = {
+        name: scheduleName,
+        scheduleItems: JSON.parse(JSON.stringify(scheduleItems))
+      };
+      savedSchedules.push(newSchedule);
+      saveSchedulesToFirestore();
+      document.getElementById("finalScheduleModal").style.display = "block";
+      document.getElementById("finalScheduleTitle").innerText = scheduleName;
+      let finalHtml = "";
+      scheduleItems.forEach(item => {
+        const emoji = subjectEmojis[item.subject] || "";
+        finalHtml += `<div class="schedule-item" data-subject="${item.subject}">
+                        <h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
+                        <p>${item.description}</p>
+                      </div>`;
+      });
+      document.getElementById("finalScheduleDisplay").innerHTML = finalHtml;
+    }
+
+    // פונקציות לעריכת לוזים שמורים
+
+    function editSavedSchedule(idx) {
+      editingSavedScheduleIndex = idx;
+      const sch = savedSchedules[idx];
+      // שמירת עותק מקורי למקרה ביטול
+      originalScheduleItems = JSON.parse(JSON.stringify(sch.scheduleItems));
+      originalScheduleName = sch.name;
+      scheduleName = sch.name;
+      scheduleItems = JSON.parse(JSON.stringify(sch.scheduleItems));
+      loadEditingScheduleBuilder();
+      renderScheduleItems();
+    }
+
+    function loadEditingScheduleBuilder() {
+      document.getElementById("content").innerHTML = `
+        <h2>עריכת לוז: ${scheduleName}</h2>
+        <p>להוספת חלק ללו״ז, לחץ על הכפתור +</p>
+        <div class="action-buttons">
+          <button class="btn" onclick="openAddItemModal()">+</button>
+          <button id="templateMenuButton" onclick="toggleTemplateDropdown()">⋮</button>
+          <div id="templateDropdown">
+            <button onclick="openConstantTemplateModal()">צור לוז קבוע</button>
+            <div id="templateList"></div>
+          </div>
+        </div>
+        <div id="scheduleContainer"></div>
+        <button class="btn" style="margin-top:20px;" onclick="finishEditingSchedule()">סיים עריכה</button>
+      `;
+    }
+
+    function finishEditingSchedule() {
+      if (confirm("האם תרצה לשמור את השינויים שביצעת?")) {
+        // עדכון הלוז השמור
+        savedSchedules[editingSavedScheduleIndex] = {
+          name: scheduleName,
+          scheduleItems: JSON.parse(JSON.stringify(scheduleItems))
+        };
+        saveSchedulesToFirestore();
+        alert("השינויים נשמרו בהצלחה!");
+        let idx = editingSavedScheduleIndex;
+        editingSavedScheduleIndex = -1;
+        originalScheduleItems = [];
+        originalScheduleName = "";
+        viewSavedSchedule(idx);
+      } else {
+        // ביטול השינויים – חזרה למצב המקורי
+        scheduleName = originalScheduleName;
+        scheduleItems = JSON.parse(JSON.stringify(originalScheduleItems));
+        alert("השינויים בוטלו.");
+        let idx = editingSavedScheduleIndex;
+        editingSavedScheduleIndex = -1;
+        originalScheduleItems = [];
+        originalScheduleName = "";
+        viewSavedSchedule(idx);
+      }
+    }
+
+    function closeFinalScheduleModal() {
+      document.getElementById("finalScheduleModal").style.display = "none";
+      goHome();
+    }
+
+    function captureScreenshot() {
+      captureScreenshotFromElement("finalScheduleContent", scheduleName);
+    }
+
+    function captureScreenshotFromElement(elementId, name) {
+      const elem = document.getElementById(elementId);
+      html2canvas(elem).then(canvas => {
+        canvas.toBlob(function(blob) {
+          const link = document.createElement("a");
+          link.download = name + ".png";
+          link.href = URL.createObjectURL(blob);
+          link.click();
+        });
+      });
+    }
+
+    function copyScheduleToClipboardFromSchedule(idx) {
+      const sch = savedSchedules[idx];
+      let text = sch.name + "\n\n";
+      sch.scheduleItems.forEach(item => {
+        const emoji = subjectEmojis[item.subject] || "";
+        text += `*${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}*\n~ ${item.description}\n\n`;
+      });
+      navigator.clipboard.writeText(text).then(() => {
+        alert("הלוז הועתק בהצלחה!");
+      }).catch(err => {
+        alert("התרחשה שגיאה בהעתקה.");
+      });
+    }
+
+    function copyScheduleToClipboard() {
+      let text = scheduleName + "\n\n";
+      scheduleItems.forEach(item => {
+        const emoji = subjectEmojis[item.subject] || "";
+        text += `*${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}*\n~ ${item.description}\n\n`;
+      });
+      navigator.clipboard.writeText(text).then(() => {
+        alert("הלוז הועתק בהצלחה!");
+      }).catch(err => {
+        alert("התרחשה שגיאה בהעתקה.");
+      });
+    }
+
+    window.addEventListener("scroll", function() {
+      let nav = document.querySelector(".topbar");
+      let currentScrollY = window.scrollY;
+      if (currentScrollY > 50) {
+        nav.style.transform = "translateY(-100%)";
+      } else {
+        nav.style.transform = "translateY(0)";
+      }
+    });
+
+    window.onclick = function(event) {
+      const modals = document.getElementsByClassName("modal");
+      for (let modal of modals) {
+        if (event.target === modal) {
+          modal.style.display = "none";
+        }
+      }
+    };
+
+    // פונקציות ניהול נושאים קבועים
+    function openAddSubjectModal() {
+      document.getElementById("addItemModal").style.display = "none";
+      document.getElementById("addSubjectModal").style.display = "block";
+    }
+
+    function closeAddSubjectModal() {
+      document.getElementById("addSubjectModal").style.display = "none";
+      document.getElementById("addItemModal").style.display = "block";
+    }
+
+    function addSubjectOneTime() {
+      const newSubjectName = document.getElementById("newSubjectNameInput").value.trim();
+      if (newSubjectName === "") {
+        alert("אנא הזן שם לנושא.");
+        return;
+      }
+      const subjectDropdown = document.getElementById("modalSubject");
+      const newOption = document.createElement("option");
+      newOption.value = newSubjectName;
+      newOption.text = newSubjectName;
+      subjectDropdown.add(newOption);
+      subjectDropdown.value = newSubjectName;
+      subjectDropdown.dispatchEvent(new Event('change'));
+      closeAddSubjectModal();
+    }
+
+    function addSubjectPermanent() {
+      const newSubjectName = document.getElementById("newSubjectNameInput").value.trim();
+      if (newSubjectName === "") {
+        alert("אנא הזן שם לנושא.");
+        return;
+      }
+      if (permanentSubjects.includes(newSubjectName)) {
+        alert("נושא זה כבר קיים ברשימת הנושאים הקבועים.");
+        return;
+      }
+      permanentSubjects.push(newSubjectName);
+      updateSubjectDropdownOptions();
+      updatePermanentSubjectsList();
+      document.getElementById("modalSubject").value = newSubjectName;
+      closeAddSubjectModal();
+      alert("הנושא '" + newSubjectName + "' נוסף לנושאים הקבועים!");
+    }
+
+    // עדכון אפשרויות תפריט הנושאים (כולל נושאים קבועים)
+    function updateSubjectDropdownOptions() {
+      const subjectDropdown = document.getElementById("modalSubject");
+      subjectDropdown.innerHTML = `
+        <option value="קריאה של חומר לימוד">📖 קריאה של חומר לימוד</option>
+        <option value="תרגול">📝 תרגול</option>
+        <option value="מעבר על חומר מהיר">⏩ מעבר על חומר מהיר</option>
+        <option value="למידה עמוקה">🔍 למידה עמוקה</option>
+        <option value="לקום">⏰ לקום</option>
+        <option value="הפסקה">☕ הפסקה</option>
+        <option value="ללכת לישון">😴 ללכת לישון</option>
+        <option value="אוכל">🍽️ אוכל</option>
+        <option value="addSubject">🖋️ הוספת נושא</option>
+      `;
+      permanentSubjects.forEach(subject => {
+        const option = document.createElement("option");
+        option.value = subject;
+        option.text = subject;
+        subjectDropdown.add(option);
+      });
+      const addSubjectOption = subjectDropdown.querySelector('option[value="addSubject"]');
+      subjectDropdown.appendChild(addSubjectOption);
+    }
+
+    function updatePermanentSubjectsList() {
+      const container = document.getElementById("permanentSubjectsList");
+      container.innerHTML = "";
+      permanentSubjects.forEach(subject => {
+        const span = document.createElement("span");
+        span.style.display = "block";
+        span.style.margin = "5px 0";
+        span.style.padding = "5px 10px";
+        span.style.backgroundColor = "#f0f0f0";
+        span.style.borderRadius = "5px";
+        span.innerText = subject + " ";
+        const trash = document.createElement("span");
+        trash.style.cursor = "pointer";
+        trash.innerText = "🗑️";
+        trash.onclick = function() {
+          if (confirm("האם אתה בטוח שברצונך למחוק את הנושא '" + subject + "'?")) {
+            const index = permanentSubjects.indexOf(subject);
+            if (index > -1) {
+              permanentSubjects.splice(index, 1);
+              updatePermanentSubjectsList();
+              updateSubjectDropdownOptions();
+              alert("הנושא נמחק.");
+            }
+          }
+        };
+        span.appendChild(trash);
+        container.appendChild(span);
+      });
+    }
+
+    function subjectChangeHandler() {
+      if (document.getElementById("modalSubject").value === "addSubject") {
+        openAddSubjectModal();
+      }
+    }
+
+    function togglePermanentSubjectsList() {
+      const container = document.getElementById("permanentSubjectsList");
+      if (container.style.display === "none" || container.style.display === "") {
+        container.style.display = "block";
+        updatePermanentSubjectsList();
+      } else {
+        container.style.display = "none";
+      }
+    }
   </script>
   <style>
     /* Reset בסיסי */
@@ -226,15 +845,35 @@
       opacity: 0.1; transform: translate(-50%, -50%); pointer-events: none; border-radius: inherit;
     }
     .modal {
-      display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%;
-      overflow: auto; background-color: rgba(0,0,0,0.5);
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.5);
     }
     .modal-content {
-      background-color: #fff; margin: 10% auto; padding: 20px; border-radius: 6px;
-      width: 90%; max-width: 500px; position: relative; box-shadow: 0 4px 8px rgba(0,0,0,0.2); text-align: center;
+      background-color: #fff;
+      margin: 10% auto;
+      padding: 20px;
+      border-radius: 6px;
+      width: 90%;
+      max-width: 500px;
+      position: relative;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      text-align: center;
     }
     .close {
-      color: #aaa; position: absolute; left: 15px; top: 10px; font-size: 28px; font-weight: bold; cursor: pointer;
+      color: #aaa;
+      position: absolute;
+      left: 15px;
+      top: 10px;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
     }
     .close:hover { color: #000; }
     .form-group { margin-bottom: 15px; text-align: center; }
@@ -242,17 +881,30 @@
     .form-group input,
     .form-group select,
     .form-group textarea {
-      width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; color: #2c3e50;
-      background-color: #f9f9f9; text-align: right;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 16px;
+      color: #2c3e50;
+      background-color: #f9f9f9;
+      text-align: right;
     }
     .modal-elegant { border: 2px solid #d4af37; }
     .modal-elegant h2 { color: #2c3e50; }
     .modal-elegant .btn { background-color: #2c3e50; }
     .modal-elegant .btn:hover { background-color: #1a242f; }
     .saved-schedule-item {
-      background-color: #fff; margin: 10px auto; padding: 10px; border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; text-align: center;
-      font-weight: bold; color: #2c3e50; max-width: 400px;
+      background-color: #fff;
+      margin: 10px auto;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      cursor: pointer;
+      text-align: center;
+      font-weight: bold;
+      color: #2c3e50;
+      max-width: 400px;
     }
     @media (max-width: 600px) {
       .topbar { flex-direction: column; gap: 10px; }
@@ -262,7 +914,6 @@
   </style>
 </head>
 <body>
-  <!-- Topbar: שם האתר ותפריט ניווט -->
   <nav class="topbar">
     <div class="site-name" onclick="goHome()">זמן זהב</div>
     <div class="nav-links">
@@ -272,16 +923,13 @@
       <a href="auth.html" id="authLink">התחברות</a>
     </div>
   </nav>
-  
-  <!-- תוכן ראשי -->
+
   <main id="content">
     <p>ברוכים הבאים לאתר "זמן זהב". בחר אחת מהאפשרויות בתפריט כדי להתחיל.</p>
   </main>
-  
-  <!-- Footer -->
+
   <footer>©️doronnakache</footer>
-  
-  <!-- מודאל: בקשת שם ללו״ז -->
+
   <div id="scheduleNameModal" class="modal">
     <div class="modal-content modal-elegant">
       <span class="close" onclick="closeScheduleNameModal()">&times;</span>
@@ -293,8 +941,7 @@
       <button class="btn" onclick="saveScheduleName()">המשך ושמירה</button>
     </div>
   </div>
-  
-  <!-- מודאל: הוספת חלק ללו״ז -->
+
   <div id="addItemModal" class="modal">
     <div class="modal-content modal-elegant">
       <span class="close" onclick="closeAddItemModal()">&times;</span>
@@ -307,9 +954,9 @@
         <label>שעת סיום:</label>
         <input type="time" id="modalEndTime">
       </div>
-      <div class="form-group">
+      <div class="form-group" style="display: flex; justify-content: center; align-items: center; gap: 10px;">
         <label>נושא:</label>
-        <select id="modalSubject">
+        <select id="modalSubject" onchange="subjectChangeHandler()">
           <option value="קריאה של חומר לימוד">📖 קריאה של חומר לימוד</option>
           <option value="תרגול">📝 תרגול</option>
           <option value="מעבר על חומר מהיר">⏩ מעבר על חומר מהיר</option>
@@ -318,7 +965,14 @@
           <option value="הפסקה">☕ הפסקה</option>
           <option value="ללכת לישון">😴 ללכת לישון</option>
           <option value="אוכל">🍽️ אוכל</option>
+          <option value="addSubject">🖋️ הוספת נושא</option>
         </select>
+        <!-- כפתור שלוש נקודות בתוך קונטיינר יחס -->
+        <div style="position: relative; display: inline-block;">
+          <button id="subjectsToggleBtn" onclick="togglePermanentSubjectsList()" style="background: none; border: none; font-size: 24px; cursor: pointer;">⋮</button>
+          <!-- תיבה נפתחת שמופיעה מתחת לכפתור -->
+          <div id="permanentSubjectsList" style="display: none; position: absolute; right: 0; top: 30px; background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 5px; z-index: 2000;"></div>
+        </div>
       </div>
       <div class="form-group">
         <label>תיאור:</label>
@@ -327,8 +981,7 @@
       <button class="btn" id="addItemBtn" onclick="saveItem()">סיום והוסף</button>
     </div>
   </div>
-  
-  <!-- מודאל: הצגת הלו״ז הסופי -->
+
   <div id="finalScheduleModal" class="modal">
     <div class="modal-content" id="finalScheduleContent">
       <span class="close" onclick="closeFinalScheduleModal()">&times;</span>
@@ -341,8 +994,7 @@
       </div>
     </div>
   </div>
-  
-  <!-- מודאל: יצירת תבנית לוז קבוע -->
+
   <div id="constantTemplateModal" class="modal">
     <div class="modal-content modal-elegant">
       <span class="close" onclick="closeConstantTemplateModal()">&times;</span>
@@ -371,405 +1023,20 @@
       <button class="btn" onclick="saveConstantTemplate()">שמור תבנית</button>
     </div>
   </div>
-  
-  <script>
-    // מיפוי נושאים לאמוג'ים – שמות מלאים כפי שמופיעים
-    const subjectEmojis = {
-      "קריאה של חומר לימוד": "📖",
-      "תרגול": "📝",
-      "מעבר על חומר מהיר": "⏩",
-      "למידה עמוקה": "🔍",
-      "לקום": "⏰",
-      "הפסקה": "☕️",
-      "ללכת לישון": "😴",
-      "אוכל": "🍽️"
-    };
 
-    // משתנים גלובליים
-    let scheduleItems = [];
-    let scheduleName = null;
-    let savedSchedules = [];
-    let editingIndex = -1;
-    let constantTemplates = [];
-    let selectedTemplate = null;
-    
-    // Dropdown לתבניות קבועות
-    function toggleTemplateDropdown() {
-      const dropdown = document.getElementById("templateDropdown");
-      dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
-      updateTemplateList();
-    }
-    
-    function updateTemplateList() {
-      const listDiv = document.getElementById("templateList");
-      listDiv.innerHTML = "";
-      constantTemplates.forEach((template, idx) => {
-        const btn = document.createElement("button");
-        btn.innerText = `${template.subject} (${template.duration} דק)`;
-        btn.onclick = function() {
-          selectedTemplate = template;
-          openAddItemModal();
-          document.getElementById("modalSubject").value = template.subject;
-          if (template.description) {
-            document.getElementById("modalDescription").value = template.description;
-          }
-        };
-        listDiv.appendChild(btn);
-      });
-    }
-    
-    function openConstantTemplateModal() {
-      document.getElementById("constantTemplateModal").style.display = "block";
-      document.getElementById("templateDropdown").style.display = "none";
-    }
-    
-    function closeConstantTemplateModal() {
-      document.getElementById("constantTemplateModal").style.display = "none";
-    }
-    
-    function saveConstantTemplate() {
-      const subject = document.getElementById("templateSubjectSelect").value;
-      const duration = parseInt(document.getElementById("templateDurationInput").value);
-      const description = document.getElementById("templateDescriptionInput").value.trim();
-      if (!subject || isNaN(duration) || duration < 1) {
-        alert("אנא הזן נושא ומשך תקין (בדקות).");
-        return;
-      }
-      constantTemplates.push({ subject, duration, description });
-      closeConstantTemplateModal();
-      updateTemplateList();
-      alert("תבנית לוז קבוע נשמרה!");
-    }
-    
-    function goHome() {
-      document.getElementById("content").innerHTML = '<p>ברוכים הבאים לאתר "זמן זהב". בחר אחת מהאפשרויות בתפריט כדי להתחיל.</p>';
-    }
-    
-    function loadNewScheduleExplanation(event) {
-      event.preventDefault();
-      document.getElementById("content").innerHTML = `
-        <h2>מה זה לו״ז חדש?</h2>
-        <p>זוהי מערכת לניהול זמן לסטודנטים, המאפשרת ליצור לוז למידה בצורה מהירה ונוחה. ניתן לבנות לוז, להוסיף חלקים, לשמור, לערוך, לצלם מסך ולהעתיק את הלו״ז להודעה.</p>
-        <button class="btn" onclick="loadNewScheduleBuilder()">בניית לוז למידה חדש</button>
-      `;
-    }
-    
-    function loadNewScheduleBuilder() {
-      scheduleItems = [];
-      scheduleName = null;
-      editingIndex = -1;
-      selectedTemplate = null;
-      document.getElementById("content").innerHTML = `
-        <h2>בניית לוז למידה חדש</h2>
-        <p>להוספת חלק ללו״ז, לחץ על הכפתור +</p>
-        <div class="action-buttons">
-          <button class="btn" onclick="openAddItemModal()">+</button>
-          <button id="templateMenuButton" onclick="toggleTemplateDropdown()">⋮</button>
-          <div id="templateDropdown">
-            <button onclick="openConstantTemplateModal()">צור לוז קבוע</button>
-            <div id="templateList"></div>
-          </div>
-        </div>
-        <div id="scheduleContainer"></div>
-        <button class="btn" style="margin-top:20px;" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
-      `;
-    }
-    
-    function loadMySchedules(event) {
-      event.preventDefault();
-      let html = `<h2>הלוזי״ם שלי</h2>`;
-      if (savedSchedules.length === 0) {
-        html += `<p>אין לוזים שמורים.</p>`;
-      } else {
-        html += `<ul style="list-style: none; padding:0;">`;
-        savedSchedules.forEach((sch, idx) => {
-          html += `<li class="saved-schedule-item" onclick="viewSavedSchedule(${idx})">
-                     ${sch.name}
-                   </li>`;
-        });
-        html += `</ul>`;
-      }
-      document.getElementById("content").innerHTML = html;
-    }
-    
-    function viewSavedSchedule(idx) {
-      const sch = savedSchedules[idx];
-      let finalHtml = "";
-      sch.scheduleItems.forEach(item => {
-        const emoji = subjectEmojis[item.subject] || "";
-        finalHtml += `<div class="schedule-item" data-subject="${item.subject}">
-                        <h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
-                        <p>${item.description}</p>
-                      </div>`;
-      });
-      document.getElementById("content").innerHTML = `
-        <h2>${sch.name}</h2>
-        <div id="finalScheduleDisplay">${finalHtml}</div>
-        <div style="margin-top:20px;">
-          <button class="btn" onclick="captureScreenshotFromElement('finalScheduleDisplay', '${sch.name}')">צילום מסך של הלו״ז</button>
-          <button class="btn" onclick="copyScheduleToClipboardFromSchedule(${idx})">העתקת הלו״ז להודעה</button>
-          <button class="btn" onclick="closeFinalScheduleModal(); goHome();">סיום</button>
-        </div>
-      `;
-    }
-    
-    function loadHowToUse(event) {
-      event.preventDefault();
-      document.getElementById("content").innerHTML = '<h2>איך משתמשים</h2><p>כאן תמצא הסברים והדרכות לשימוש באתר.</p>';
-    }
-    
-    function addOneMinute(timeStr) {
-      let [h, m] = timeStr.split(":").map(Number);
-      m++;
-      if (m >= 60) { m = 0; h = (h + 1) % 24; }
-      return (h < 10 ? "0" + h : h) + ":" + (m < 10 ? "0" + m : m);
-    }
-    
-    function openAddItemModal() {
-      if (!scheduleName) {
-        document.getElementById("scheduleNameModal").style.display = "block";
-      } else {
-        editingIndex = -1;
-        document.getElementById("addItemModalTitle").innerText = "הוספת חלק ללו״ז";
-        document.getElementById("addItemBtn").innerText = "סיום והוסף";
-        if (scheduleItems.length > 0) {
-          let lastItem = scheduleItems[scheduleItems.length - 1];
-          let nextStart = addOneMinute(lastItem.endTime);
-          document.getElementById("modalStartTime").value = nextStart;
-        } else {
-          document.getElementById("modalStartTime").value = "";
-        }
-        setDefaultEndTime();
-        if (selectedTemplate) {
-          document.getElementById("modalSubject").value = selectedTemplate.subject;
-          if(selectedTemplate.description) {
-            document.getElementById("modalDescription").value = selectedTemplate.description;
-          }
-        }
-        document.getElementById("addItemModal").style.display = "block";
-      }
-    }
-    
-    function closeScheduleNameModal() {
-      document.getElementById("scheduleNameModal").style.display = "none";
-    }
-    
-    function saveScheduleName() {
-      const nameInput = document.getElementById("scheduleNameInput").value.trim();
-      if (nameInput === "") {
-        alert("אנא הזן שם ללו״ז.");
-        return;
-      }
-      if (savedSchedules.some(sch => sch.name === nameInput)) {
-        alert("לוז עם שם זה כבר קיים. אנא בחר שם אחר.");
-        return;
-      }
-      scheduleName = nameInput;
-      closeScheduleNameModal();
-      document.getElementById("content").innerHTML = `
-        <h2>${scheduleName}</h2>
-        <p>להוספת חלק חדש, לחץ על הכפתור +</p>
-        <div class="action-buttons">
-          <button class="btn" onclick="openAddItemModal()">+</button>
-          <button id="templateMenuButton" onclick="toggleTemplateDropdown()">⋮</button>
-          <div id="templateDropdown">
-            <button onclick="openConstantTemplateModal()">צור לוז קבוע</button>
-            <div id="templateList"></div>
-          </div>
-        </div>
-        <div id="scheduleContainer"></div>
-        <button class="btn" style="margin-top:20px;" onclick="openFinalSchedule()">שומר וסיים לו״ז</button>
-      `;
-      openAddItemModal();
-    }
-    
-    function closeAddItemModal() {
-      document.getElementById("addItemModal").style.display = "none";
-      clearAddItemForm();
-    }
-    
-    function clearAddItemForm() {
-      document.getElementById("modalStartTime").value = "";
-      document.getElementById("modalEndTime").value = "";
-      document.getElementById("modalDescription").value = "";
-    }
-    
-    function setDefaultEndTime() {
-      const startTime = document.getElementById("modalStartTime").value;
-      if (startTime) {
-        let endTime;
-        if (selectedTemplate) {
-          let [h, m] = startTime.split(":").map(Number);
-          let total = h * 60 + m + selectedTemplate.duration;
-          total = total % (24 * 60);
-          let newH = Math.floor(total / 60);
-          let newM = total % 60;
-          endTime = (newH < 10 ? "0" + newH : newH) + ":" + (newM < 10 ? "0" + newM : newM);
-        } else {
-          let [h, m] = startTime.split(":").map(Number);
-          h = (h + 1) % 24;
-          endTime = (h < 10 ? "0" + h : h) + ":" + (m < 10 ? "0" + m : m);
-        }
-        const endInput = document.getElementById("modalEndTime");
-        endInput.value = endTime;
-        endInput.min = startTime;
-      }
-    }
-    
-    function saveItem() {
-      const startTime = document.getElementById("modalStartTime").value;
-      const endTime = document.getElementById("modalEndTime").value;
-      const subjectSelect = document.getElementById("modalSubject");
-      const subject = subjectSelect.value;
-      const description = document.getElementById("modalDescription").value;
-      
-      if (!startTime || !endTime) {
-        alert("אנא בחר שעת התחלה ושעת סיום.");
-        return;
-      }
-      if (startTime >= endTime) {
-        alert("שעת ההתחלה חייבת להיות מוקדמת משעת הסיום.");
-        return;
-      }
-      if (editingIndex === -1 && scheduleItems.some(item => item.startTime === startTime)) {
-        alert("כבר קיים פריט עם שעת התחלה זו.");
-        return;
-      }
-      
-      const newItem = { startTime, endTime, subject, description };
-      if (editingIndex === -1) {
-        scheduleItems.push(newItem);
-      } else {
-        scheduleItems[editingIndex] = newItem;
-      }
-      scheduleItems.sort((a, b) => a.startTime.localeCompare(b.startTime));
-      renderScheduleItems();
-      closeAddItemModal();
-      // שמירה ב-Firestore
-      saveSchedulesToFirestore();
-    }
-    
-    function renderScheduleItems() {
-      const container = document.getElementById("scheduleContainer");
-      container.innerHTML = "";
-      scheduleItems.forEach((item, idx) => {
-        const emoji = subjectEmojis[item.subject] || "";
-        const div = document.createElement("div");
-        div.className = "schedule-item";
-        div.setAttribute("data-subject", item.subject);
-        div.innerHTML = `<h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
-                         <p>${item.description}</p>`;
-        div.onclick = function() {
-          editingIndex = idx;
-          document.getElementById("modalStartTime").value = item.startTime;
-          document.getElementById("modalEndTime").value = item.endTime;
-          document.getElementById("modalDescription").value = item.description;
-          const options = Array.from(document.getElementById("modalSubject").options);
-          document.getElementById("modalSubject").selectedIndex = options.findIndex(option => option.value === item.subject);
-          document.getElementById("addItemModalTitle").innerText = "עריכת חלק בלו״ז";
-          document.getElementById("addItemBtn").innerText = "שמור שינויים";
-          document.getElementById("addItemModal").style.display = "block";
-        };
-        container.appendChild(div);
-      });
-    }
-    
-    function openFinalSchedule() {
-      if (!scheduleName) {
-        alert("עליך להזין שם ללו״ז ולבנות לפחות חלק אחד.");
-        return;
-      }
-      if (scheduleItems.length === 0) {
-        alert("עליך להוסיף לפחות חלק אחד ללו״ז.");
-        return;
-      }
-      const newSchedule = {
-        name: scheduleName,
-        scheduleItems: JSON.parse(JSON.stringify(scheduleItems))
-      };
-      savedSchedules.push(newSchedule);
-      // שמירה ב-Firestore
-      saveSchedulesToFirestore();
-      document.getElementById("finalScheduleModal").style.display = "block";
-      document.getElementById("finalScheduleTitle").innerText = scheduleName;
-      let finalHtml = "";
-      scheduleItems.forEach(item => {
-        const emoji = subjectEmojis[item.subject] || "";
-        finalHtml += `<div class="schedule-item" data-subject="${item.subject}">
-                        <h3>${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}</h3>
-                        <p>${item.description}</p>
-                      </div>`;
-      });
-      document.getElementById("finalScheduleDisplay").innerHTML = finalHtml;
-    }
-    
-    function closeFinalScheduleModal() {
-      document.getElementById("finalScheduleModal").style.display = "none";
-      goHome();
-    }
-    
-    function captureScreenshot() {
-      captureScreenshotFromElement("finalScheduleContent", scheduleName);
-    }
-    
-    function captureScreenshotFromElement(elementId, name) {
-      const elem = document.getElementById(elementId);
-      html2canvas(elem).then(canvas => {
-        canvas.toBlob(function(blob) {
-          const link = document.createElement("a");
-          link.download = name + ".png";
-          link.href = URL.createObjectURL(blob);
-          link.click();
-        });
-      });
-    }
-    
-    function copyScheduleToClipboardFromSchedule(idx) {
-      const sch = savedSchedules[idx];
-      let text = sch.name + "\n\n";
-      sch.scheduleItems.forEach(item => {
-        const emoji = subjectEmojis[item.subject] || "";
-        text += `*${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}*\n~ ${item.description}\n\n`;
-      });
-      navigator.clipboard.writeText(text).then(() => {
-        alert("הלוז הועתק בהצלחה!");
-      }).catch(err => {
-        alert("התרחשה שגיאה בהעתקה.");
-      });
-    }
-    
-    function copyScheduleToClipboard() {
-      let text = scheduleName + "\n\n";
-      scheduleItems.forEach(item => {
-        const emoji = subjectEmojis[item.subject] || "";
-        text += `*${item.startTime} - ${item.endTime} : ${item.subject} ${emoji}*\n~ ${item.description}\n\n`;
-      });
-      navigator.clipboard.writeText(text).then(() => {
-        alert("הלוז הועתק בהצלחה!");
-      }).catch(err => {
-        alert("התרחשה שגיאה בהעתקה.");
-      });
-    }
-    
-    window.addEventListener("scroll", function() {
-      let nav = document.querySelector(".topbar");
-      let currentScrollY = window.scrollY;
-      if (currentScrollY > 50) {
-        nav.style.transform = "translateY(-100%)";
-      } else {
-        nav.style.transform = "translateY(0)";
-      }
-    });
-    
-    window.onclick = function(event) {
-      const modals = document.getElementsByClassName("modal");
-      for (let modal of modals) {
-        if (event.target === modal) {
-          modal.style.display = "none";
-        }
-      }
-    };
-  </script>
-  
+  <div id="addSubjectModal" class="modal">
+    <div class="modal-content modal-elegant">
+      <span class="close" onclick="closeAddSubjectModal()">&times;</span>
+      <h2>הוספת נושא</h2>
+      <div class="form-group">
+        <label>אנא בחר שם לנושא (מומלץ להוסיף סמיילי):</label>
+        <input type="text" id="newSubjectNameInput" placeholder="למשל: תרגול מהיר 20 דקות 🧮">
+      </div>
+      <div class="form-group" style="display: flex; justify-content: space-around;">
+        <button class="btn" onclick="addSubjectOneTime()">הוספה חד פעמית</button>
+        <button class="btn" onclick="addSubjectPermanent()">הוספה קבועה</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
